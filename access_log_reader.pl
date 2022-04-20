@@ -27,23 +27,27 @@ my @suspicious_requests = (
     '.*root.*',
 );
 
-open(ACCESS_LOG, $cli_opts{logpath});
+open(my $log_fh, '<', $cli_opts{logpath}) or die $!;
 
 # Parsing log entries
 my %processed_items = ();
 
 my $i = 0;
-while(my $line =<ACCESS_LOG>) {
+while(my $line =<$log_fh>) {
 	chomp($line);
 
 	# Parse Log Entry
-	$line =~ /(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}) - (\S+?) \[(.*)\] "(.*)" (\d{3}) (\d+)/;
-	my $ip = $1;
-	my $user = $2;
-	my $timestamp = $3;
-	my $request = $4;
-	my $response_status = $5;
-	my $size = $6;
+	my ($ip, $user, $timestamp, $request, $response_status, $size);
+	if($line =~ /(?<ip>\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}) - (?<user>\S+?) \[?<timestamp>(.*)\] "(?<request>.*)" (?<response_status>\d{3}) (?<size>\d+) ("(?<referer>).?")? ("(?<user_agent>).?")?/) {
+		$ip = $+{ip};
+		$user = $+{user};
+		$timestamp = $+{timestamp};
+		$request = $+{request};
+		$response_status = $+{response_status};
+		$size = $+{size};
+	} else {
+		next;
+	}
 
 	# Parse Date
 	my %month_lookup = (
@@ -81,7 +85,7 @@ while(my $line =<ACCESS_LOG>) {
 	$i++;
 }
 
-close(ACCESS_LOG);
+close($log_fh);
 
 # Analyzing entries
 my @reporting_items;
@@ -117,7 +121,7 @@ my %mail = (
 	Message => $content,
 );
 
-if ($cli_opts{output} eq 'mail') {
+if (defined $cli_opts{output} && $cli_opts{output} eq 'mail') {
     sendmail(%mail) or die $Mail::Sendmail::error;
     print STDERR "OK. Log says:\n" . $Mail::Sendmail::log;
 } else {
