@@ -16,8 +16,17 @@ GetOptions(
 	'--mail-address:s' => \$cli_opts{mailaddress},
 );
 
-# Check options
-print STDERR "CLI Options: " . Dumper(%cli_opts) . "\n";
+# Check log path
+if (!defined $cli_opts{logpath} || !$cli_opts{logpath}) {
+	die "No path to log file given!\n";
+} elsif (!-e $cli_opts{logpath}) {
+	die "Given log file does not exist!\n";
+}
+
+# Check output and potential mail
+if ($cli_opts{output} eq 'mail' && (!defined $cli_opts{mailaddress} || !$cli_opts{mailaddress})) {
+	die "Mail as output chosen but no mail address provided!\n";
+}
 
 # Configuration
 my $frequency_limit = 15;
@@ -77,7 +86,7 @@ while(my $line =<$log_fh>) {
 	$processed_items{$i} = {
 		'ip' => $ip,
 		'user' => $user,
-		'timestamp' => $date,
+		'date' => $date,
 		'request' => $request,
 		'response_state' => $response_status,
 		'size' => $size
@@ -91,20 +100,32 @@ close($log_fh);
 my @reporting_items;
 
 # Ideas: Many requests from same ip, many requests in short time, path traversal attacks, request state 400
+# Count requests per IP
 my %ip_count = ();
+# Count requests per hour and minute (day is irrelevant since log rotates daily)
 my %time_count = ();
+
+print STDERR "Items: " . Dumper(\%processed_items) . "\n";
+
 for my $id (sort keys %processed_items ) {
     my %item = %{$processed_items{$id}};
     # Check request forgery
     for my $regex (@suspicious_requests) {
         if ($item{'request'} =~ $regex) {
-            push @reporting_items, "Suspicious request detected.\n\tRegex: $regex\n\tHit:\n\t\tIP: $item{'ip'}\n\t\tUser: $item{'user'}\n\t\tDate and Time: $item{'timestamp'}\n\t\tRequest: $item{'request'}\n\t\tResponse State: $item{'response_state'}\n"
+            push @reporting_items, "Suspicious request detected.\n\tRegex: $regex\n\tHit:\n\t\tIP: $item{'ip'}\n\t\tUser: $item{'user'}\n\t\tDate and Time: $item{'date'}\n\t\tRequest: $item{'request'}\n\t\tResponse State: $item{'response_state'}\n"
         }
     }
 
     # Collect ip
     $ip_count{$item{'ip'}}++;
+
+    # Collect time count
+    print STDOUT $id . "\n";
+    print STDOUT $item{'date'}->hour() . ", " . $item{'date'}->minute() . "\n";
+    $time_count{$item{'date'}->hour() . '-' . $item{'date'}->minute()}++;
 }
+
+print STDOUT "Time Count: " . Dumper(\%time_count) . "\n";
 
 for my $ip (keys %ip_count) {
     if ($ip_count{$ip} > $frequency_limit) {
